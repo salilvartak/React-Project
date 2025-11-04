@@ -1,5 +1,7 @@
 import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import { signOut } from 'firebase/auth'; // Import signOut
+import { Button, Platform, StyleSheet } from 'react-native'; // Import Button
+import { auth } from '../../firebaseConfig'; // Import auth (note path)
 
 import { HelloWave } from '@/components/hello-wave';
 import ParallaxScrollView from '@/components/parallax-scroll-view';
@@ -8,6 +10,12 @@ import { ThemedView } from '@/components/themed-view';
 import { Link } from 'expo-router';
 
 export default function HomeScreen() {
+  
+  // Handle user sign-out
+  const handleSignOut = () => {
+    signOut(auth).catch((error) => console.error("Sign Out Error", error));
+  };
+
   return (
     <ParallaxScrollView
       headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
@@ -21,6 +29,10 @@ export default function HomeScreen() {
         <ThemedText type="title">Welcome!</ThemedText>
         <HelloWave />
       </ThemedView>
+      
+      {/* ADDED SIGN OUT BUTTON HERE */}
+      <Button title="Sign Out" onPress={handleSignOut} />
+
       <ThemedView style={styles.stepContainer}>
         <ThemedText type="subtitle">Step 1: Try it</ThemedText>
         <ThemedText>

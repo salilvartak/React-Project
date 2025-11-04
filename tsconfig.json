@@ -6,12 +6,13 @@
       "@/*": [
         "./*"
       ]
-    }
+    },
+    "allowJs": true
   },
   "include": [
     "**/*.ts",
     "**/*.tsx",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
-, "firebase.js"  ]
+, "firebaseConfig.js"  ]
 }

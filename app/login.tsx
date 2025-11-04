@@ -2,15 +2,14 @@ import {
     createUserWithEmailAndPassword,
     signInWithEmailAndPassword
 } from 'firebase/auth';
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Alert, Button, StyleSheet, Text, TextInput, View } from 'react-native';
-import { auth } from './firebaseConfig'; // Import your auth object
+import { auth } from '../firebaseConfig'; // Note the '../' path
 
 const AuthScreen = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  // Handle new user sign-up
   const handleSignUp = () => {
     if (email === '' || password === '') {
       Alert.alert("Error", "Please enter an email and password.");
@@ -18,8 +17,8 @@ const AuthScreen = () => {
     }
     createUserWithEmailAndPassword(auth, email, password)
       .then((userCredential) => {
-        // Signed in!
         console.log('User account created:', userCredential.user);
+        // Navigation will be handled by the root layout
       })
       .catch((error) => {
         console.error(error);
@@ -27,7 +26,6 @@ const AuthScreen = () => {
       });
   };
 
-  // Handle existing user sign-in
   const handleSignIn = () => {
     if (email === '' || password === '') {
       Alert.alert("Error", "Please enter an email and password.");
@@ -35,8 +33,8 @@ const AuthScreen = () => {
     }
     signInWithEmailAndPassword(auth, email, password)
       .then((userCredential) => {
-        // Signed in!
         console.log('User signed in:', userCredential.user);
+        // Navigation will be handled by the root layout
       })
       .catch((error) => {
         console.error(error);
@@ -70,6 +68,7 @@ const AuthScreen = () => {
   );
 };
 
+// Re-using the styles from the original file
 const styles = StyleSheet.create({
   container: {
     flex: 1,
