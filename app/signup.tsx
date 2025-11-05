@@ -1,8 +1,10 @@
-import { Link } from 'expo-router';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import React, { useState } from 'react';
 import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { auth } from '../firebaseConfig.js';
+// Import db and firestore functions
+import { Link } from 'expo-router'; // We don't need useRouter here anymore
+import { doc, setDoc } from "firebase/firestore";
+import { auth, db } from '../firebaseConfig.js';
 
 const SignupScreen = () => {
   const [displayName, setDisplayName] = useState('');
@@ -23,12 +25,26 @@ const SignupScreen = () => {
     createUserWithEmailAndPassword(auth, email, password)
       .then((userCredential) => {
         const user = userCredential.user;
+        
+        // Update auth profile
         return updateProfile(user, {
           displayName: displayName
+        }).then(() => user); // Pass user object to the next .then()
+      })
+      .then((user) => {
+        // Create a new document in Firestore
+        const userDocRef = doc(db, "users", user.uid);
+        return setDoc(userDocRef, {
+          uid: user.uid,
+          email: user.email,
+          displayName: displayName,
+          hasFamily: false, // <-- This is the new, important flag!
         });
       })
       .then(() => {
-        console.log('User profile updated');
+        console.log('User account created and profile saved in Firestore!');
+        // Auth listener in _layout.tsx will now handle the redirect
+        // to /family-choice because hasFamily is false.
       })
       .catch((error) => {
         console.error(error);
@@ -37,6 +53,7 @@ const SignupScreen = () => {
   };
 
   return (
+    // ... rest of your JSX (no changes needed)
     <View style={styles.container}>
       <Text style={styles.title}>Create Account</Text>
       <TextInput
@@ -85,7 +102,7 @@ const SignupScreen = () => {
   );
 };
 
-// Styles from your design
+// ... styles (no changes needed)
 const styles = StyleSheet.create({
   container: {
     flex: 1,

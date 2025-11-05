@@ -1,9 +1,8 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-// You can also import getFirestore for the database later
+import { getFirestore } from "firebase/firestore"; // Import Firestore
 
 // Your web app's Firebase configuration
-// From your original file
 const firebaseConfig = {
   apiKey: "AIzaSyD0jAS7jatejNh9ipqbKOd4hOzHhGIaLaQ",
   authDomain: "choretracker-2c586.firebaseapp.com",
@@ -17,5 +16,8 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-// Initialize Firebase Authentication and export it
+// Initialize and export Auth
 export const auth = getAuth(app);
+
+// Initialize and export Firestore
+export const db = getFirestore(app);
