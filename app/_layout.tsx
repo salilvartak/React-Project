@@ -3,8 +3,8 @@ import { onAuthStateChanged, User } from 'firebase/auth';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { auth, db } from '../firebaseConfig.js';
-// Import onSnapshot instead of getDoc
-import { doc, DocumentData, onSnapshot } from 'firebase/firestore';
+// Import getDoc instead of onSnapshot
+import { doc, DocumentData, getDoc } from 'firebase/firestore';
 
 export const unstable_settings = {
   initialRouteName: '(tabs)',
@@ -22,13 +22,14 @@ function useProtectedRoute(user: User | null | undefined, profile: DocumentData 
 
     const onAuthPages = segments[0] === 'login' || segments[0] === 'signup';
     const onFamilyChoice = segments[0] === 'family-choice';
+    const onFamilyCreated = segments[0] === 'family-created'; 
     const inApp = segments[0] === '(tabs)';
 
     if (!user && !onAuthPages) {
       router.replace('/login' as Href);
     } else if (user && onAuthPages) {
       router.replace('/'); 
-    } else if (user && profile && profile.hasFamily && !inApp) {
+    } else if (user && profile && profile.hasFamily && !inApp && !onFamilyCreated) {
       router.replace('/(tabs)' as Href);
     } else if (user && profile && !profile.hasFamily && !onFamilyChoice) {
       router.replace('/family-choice' as Href);
@@ -44,12 +45,10 @@ export default function RootLayout() {
   const [profile, setProfile] = useState<DocumentData | null | undefined>(undefined);
 
   useEffect(() => {
-    // This listener handles auth changes (login/logout)
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
-        // We will fetch the profile in the *next* useEffect
-        setProfile(undefined); // Set profile to loading
+        setProfile(undefined); 
       } else {
         setUser(null);
         setProfile(null);
@@ -59,22 +58,23 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    // This listener handles REAL-TIME profile changes
+    // Use getDoc for a one-time read. This stops the race condition.
     if (user) {
       const docRef = doc(db, "users", user.uid);
-      // onSnapshot returns an "unsubscribe" function
-      const unsubscribeProfile = onSnapshot(docRef, (docSnap) => {
+      getDoc(docRef).then((docSnap) => {
         if (docSnap.exists()) {
           setProfile(docSnap.data());
         } else {
-          setProfile(null); // No profile found
+          // This is the warning you are seeing. It's OK.
+          console.warn("No user profile found in Firestore for UID:", user.uid);
+          setProfile(null); 
         }
+      }).catch((error) => {
+        console.error("Error fetching user profile:", error);
+        setProfile(null);
       });
-
-      // Cleanup this listener when user logs out
-      return () => unsubscribeProfile();
     }
-  }, [user]); // This effect re-runs when the user changes
+  }, [user]); 
 
   useProtectedRoute(user, profile);
 
@@ -93,6 +93,8 @@ export default function RootLayout() {
       <Stack.Screen name="login" options={{ headerShown: false }} />
       <Stack.Screen name="signup" options={{ headerShown: false }} />
       <Stack.Screen name="family-choice" options={{ headerShown: false }} />
+      {/* Add the new screen here */}
+      <Stack.Screen name="family-created" options={{ headerShown: false }} /> 
       <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
     </Stack>
   );

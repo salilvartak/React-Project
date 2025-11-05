@@ -1,16 +1,17 @@
 import { useRouter } from 'expo-router';
 import { signOut } from 'firebase/auth';
-import { doc, getDoc, serverTimestamp, writeBatch } from "firebase/firestore"; // Import Firestore functions
+import { doc, getDoc, serverTimestamp, writeBatch } from "firebase/firestore";
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { auth, db } from '../firebaseConfig.js'; // Import db
+import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { auth, db } from '../firebaseConfig.js';
 
 const FamilyChoiceScreen = () => {
   const [isLoading, setIsLoading] = useState(false);
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [familyName, setFamilyName] = useState("");
   const router = useRouter();
 
   // Generates a 6-digit alphanumeric (A-Z, 0-9) code.
-  // We remove '0' and 'O' to avoid confusion.
   const generateFamilyCode = () => {
     const chars = 'ABCDEFGHIJKLMNPQRSTUVWXYZ123456789';
     let result = '';
@@ -20,8 +21,24 @@ const FamilyChoiceScreen = () => {
     return result;
   };
 
-  const handleCreateFamily = async () => {
-    setIsLoading(true);
+  // 1. This function just opens the modal
+  const handleCreateFamily = () => {
+    setIsModalVisible(true);
+  };
+
+  // 2. This handles the modal's "Create" button press
+  const handleSubmitFamilyName = () => {
+    if (familyName && familyName.trim() !== "") {
+      closeModal();
+      executeCreateFamily(familyName.trim());
+    } else {
+      Alert.alert("Error", "Family name cannot be empty.");
+    }
+  };
+
+  // 3. This is the main creation logic
+  const executeCreateFamily = async (name: string) => {
+    setIsLoading(true); // Show loading spinner
     const user = auth.currentUser;
     if (!user) {
       setIsLoading(false);
@@ -29,16 +46,14 @@ const FamilyChoiceScreen = () => {
       return;
     }
 
+    let success = false; // Flag to prevent re-render on success
+    let familyCode = ''; // To store the generated code
     try {
-      // Create a new batch
       const batch = writeBatch(db);
-      
-      // We need to make sure the code is unique.
-      // For 2.1B+ combinations, a simple check is fine.
-      let familyCode: string;
       let familyDocRef;
       let familyDocSnap;
 
+      // Find a unique family code
       do {
         familyCode = generateFamilyCode();
         familyDocRef = doc(db, "families", familyCode);
@@ -47,6 +62,7 @@ const FamilyChoiceScreen = () => {
       
       // 1. Create the new family document
       batch.set(familyDocRef, {
+        name: name,
         code: familyCode,
         admin: user.uid,
         members: [
@@ -55,31 +71,47 @@ const FamilyChoiceScreen = () => {
         createdAt: serverTimestamp(),
       });
 
-      // 2. Update the user's document
+      // 2. Create or update the user's document
       const userDocRef = doc(db, "users", user.uid);
-      batch.update(userDocRef, {
+      // Use set with { merge: true }
+      // This will CREATE the doc if it's missing (fixing your error)
+      // or UPDATE it if it already exists.
+      batch.set(userDocRef, {
         hasFamily: true,
         familyId: familyCode,
-      });
+      }, { merge: true });
 
-      // Commit both writes at the same time
+      // 3. Commit both changes at once
       await batch.commit();
-
-      Alert.alert(
-        "Family Created!",
-        `Your new family code is: ${familyCode}\n\nShare this code with family members to let them join.`
-      );
-      router.replace('/(tabs)'); // Navigate to the main app
+      
+      success = true; // Mark as successful
+      
+      // 4. Navigate to the success screen
+      router.replace({
+        pathname: '/family-created',
+        params: { code: familyCode, name: name }
+      });
 
     } catch (error) {
       console.error("Error creating family: ", error);
       Alert.alert("Error", "Could not create family. Please try again.");
-      setIsLoading(false);
+    } finally {
+      // 5. ONLY stop loading if it failed.
+      // If it succeeded, the screen will navigate away,
+      // and setting state here would cause a race condition.
+      if (!success) {
+        setIsLoading(false);
+      }
     }
   };
 
+  // Helper to close and reset the modal state
+  const closeModal = () => {
+    setIsModalVisible(false);
+    setFamilyName("");
+  };
+
   const handleJoinFamily = () => {
-    // We will add logic here in the next step
     alert("Join Family logic goes here!");
   };
 
@@ -89,12 +121,49 @@ const FamilyChoiceScreen = () => {
 
   return (
     <View style={styles.container}>
+      {/* --- Modal for entering family name --- */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={isModalVisible}
+        onRequestClose={closeModal}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalView}>
+            <Text style={styles.modalTitle}>Name Your Family</Text>
+            <Text style={styles.modalSubtitle}>Please enter a name for your new family.</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="e.g. The Smith Family"
+              placeholderTextColor="#999"
+              value={familyName}
+              onChangeText={setFamilyName}
+            />
+            <View style={styles.modalButtonContainer}>
+              <Pressable
+                style={[styles.modalButton, styles.modalButtonCancel]}
+                onPress={closeModal}
+              >
+                <Text style={[styles.modalButtonText, styles.modalButtonCancelText]}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalButton, styles.modalButtonCreate]}
+                onPress={handleSubmitFamilyName}
+              >
+                <Text style={[styles.modalButtonText, styles.modalButtonCreateText]}>Create</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* --- Main Screen Content --- */}
       <Text style={styles.title}>Welcome, {auth.currentUser?.displayName}!</Text>
       <Text style={styles.subtitle}>You're almost ready to start tracking chores.</Text>
       
-      <TouchableOpacity 
-        style={styles.button} 
-        onPress={handleCreateFamily} 
+      <TouchableOpacity
+        style={styles.button}
+        onPress={handleCreateFamily} // Opens the modal
         disabled={isLoading}
       >
         {isLoading ? (
@@ -104,9 +173,9 @@ const FamilyChoiceScreen = () => {
         )}
       </TouchableOpacity>
       
-      <TouchableOpacity 
-        style={styles.buttonOutline} 
-        onPress={handleJoinFamily} 
+      <TouchableOpacity
+        style={styles.buttonOutline}
+        onPress={handleJoinFamily}
         disabled={isLoading}
       >
         <Text style={styles.buttonOutlineText}>Join a Family</Text>
@@ -119,6 +188,7 @@ const FamilyChoiceScreen = () => {
   );
 };
 
+// --- Styles ---
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -177,7 +247,82 @@ const styles = StyleSheet.create({
   signOutText: {
     color: '#888',
     fontSize: 16,
-  }
+  },
+  // Modal Styles
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalView: {
+    width: '85%',
+    backgroundColor: 'white',
+    borderRadius: 15,
+    padding: 25,
+    alignItems: 'stretch',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    textAlign: 'center',
+    color: '#333',
+  },
+  modalSubtitle: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  modalInput: {
+    width: '100%',
+    height: 50,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 8,
+    paddingHorizontal: 15,
+    fontSize: 16,
+    color: '#333',
+    marginBottom: 25,
+  },
+  modalButtonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  modalButton: {
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    elevation: 2,
+    flex: 1,
+    marginHorizontal: 5,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalButtonCancel: {
+    backgroundColor: '#f0f0f0',
+  },
+  modalButtonCancelText: {
+    color: '#555',
+  },
+  modalButtonCreate: {
+    backgroundColor: '#4CAF50',
+  },
+  modalButtonCreateText: {
+    color: 'white',
+  },
+  modalButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
 });
 
 export default FamilyChoiceScreen;
