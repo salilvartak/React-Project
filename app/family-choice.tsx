@@ -1,16 +1,24 @@
 // app/family-choice.tsx
 import { useRouter } from 'expo-router';
 import { signOut } from 'firebase/auth';
-import { doc, getDoc, serverTimestamp, writeBatch } from "firebase/firestore";
+// Import arrayUnion, getDoc, and updateDoc
+import { arrayUnion, doc, getDoc, serverTimestamp, writeBatch } from "firebase/firestore";
 import React, { useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { auth, db } from '../firebaseConfig.js';
 
 const FamilyChoiceScreen = () => {
   const [isLoading, setIsLoading] = useState(false);
-  const [isModalVisible, setIsModalVisible] = useState(false);
+  
+  // State for Create Family Modal
+  const [isCreateModalVisible, setIsCreateModalVisible] = useState(false);
   const [familyName, setFamilyName] = useState("");
-  const router = useRouter(); // We keep this for the (unused) join button
+
+  // --- NEW: State for Join Family Modal ---
+  const [isJoinModalVisible, setIsJoinModalVisible] = useState(false);
+  const [familyCode, setFamilyCode] = useState("");
+
+  const router = useRouter(); 
 
   const generateFamilyCode = () => {
     const chars = 'ABCDEFGHIJKLMNPQRSTUVWXYZ123456789';
@@ -21,13 +29,19 @@ const FamilyChoiceScreen = () => {
     return result;
   };
 
+  // --- Create Family Modal Logic ---
   const handleCreateFamily = () => {
-    setIsModalVisible(true);
+    setIsCreateModalVisible(true);
+  };
+
+  const closeCreateModal = () => {
+    setIsCreateModalVisible(false);
+    setFamilyName("");
   };
 
   const handleSubmitFamilyName = () => {
     if (familyName && familyName.trim() !== "") {
-      closeModal();
+      closeCreateModal();
       executeCreateFamily(familyName.trim());
     } else {
       Alert.alert("Error", "Family name cannot be empty.");
@@ -43,21 +57,21 @@ const FamilyChoiceScreen = () => {
       return;
     }
 
-    let familyCode = ''; // To store the generated code
+    let newFamilyCode = '';
     try {
       const batch = writeBatch(db);
       let familyDocRef;
       let familyDocSnap;
 
       do {
-        familyCode = generateFamilyCode();
-        familyDocRef = doc(db, "families", familyCode);
+        newFamilyCode = generateFamilyCode();
+        familyDocRef = doc(db, "families", newFamilyCode);
         familyDocSnap = await getDoc(familyDocRef);
       } while (familyDocSnap.exists());
       
       batch.set(familyDocRef, {
         name: name,
-        code: familyCode,
+        code: newFamilyCode,
         admin: user.uid,
         members: [
           { uid: user.uid, name: user.displayName, role: 'admin' }
@@ -68,55 +82,113 @@ const FamilyChoiceScreen = () => {
       const userDocRef = doc(db, "users", user.uid);
       batch.set(userDocRef, {
         hasFamily: true,
-        familyId: familyCode,
+        familyId: newFamilyCode,
       }, { merge: true });
 
       await batch.commit();
       
-      // --- THIS IS THE FIX ---
-      // 1. Show an Alert with the new code
       Alert.alert(
         "Family Created!",
-        `Your new family code is: ${familyCode}\n\nYou will now be taken to the app.`
+        `Your new family code is: ${newFamilyCode}\n\nYou will now be taken to the app.`
       );
       
-      // 2. DO NOT navigate. The `onSnapshot` in _layout.tsx
-      //    will detect the change and navigate automatically.
-      
-      // router.replace(...) // <-- REMOVED
+      // Navigation is handled by onSnapshot in _layout.tsx
 
     } catch (error) {
       console.error("Error creating family: ", error);
       Alert.alert("Error", "Could not create family. Please try again.");
     } finally {
-      // 3. We can now safely set loading to false.
-      // The onSnapshot will fire AFTER this state update.
       setIsLoading(false);
     }
   };
 
-  const closeModal = () => {
-    setIsModalVisible(false);
-    setFamilyName("");
-  };
 
+  // --- NEW: Join Family Modal Logic ---
+  
   const handleJoinFamily = () => {
-    alert("Join Family logic goes here!");
+    // This now opens the join modal
+    setIsJoinModalVisible(true);
   };
 
+  const closeJoinModal = () => {
+    setIsJoinModalVisible(false);
+    setFamilyCode("");
+  };
+
+  const handleSubmitFamilyCode = async () => {
+    const code = familyCode.toUpperCase().trim();
+    if (code.length !== 6) {
+      Alert.alert("Error", "Invite code must be 6 characters long.");
+      return;
+    }
+
+    setIsLoading(true);
+    const user = auth.currentUser;
+    if (!user) {
+      setIsLoading(false);
+      Alert.alert("Error", "You must be logged in to join a family.");
+      return;
+    }
+
+    try {
+      // 1. Check if family exists
+      const familyDocRef = doc(db, "families", code);
+      const familyDocSnap = await getDoc(familyDocRef);
+
+      if (!familyDocSnap.exists()) {
+        throw new Error("Family code not found. Please check the code and try again.");
+      }
+
+      // 2. Add user to family and update user's profile in a batch
+      const batch = writeBatch(db);
+
+      // Add user to the family's members array
+      const newMember = {
+        uid: user.uid,
+        name: user.displayName || user.email,
+        role: 'member'
+      };
+      batch.update(familyDocRef, {
+        members: arrayUnion(newMember)
+      });
+
+      // Update the user's document
+      const userDocRef = doc(db, "users", user.uid);
+      batch.set(userDocRef, {
+        hasFamily: true,
+        familyId: code,
+      }, { merge: true });
+
+      // 3. Commit the batch
+      await batch.commit();
+
+      Alert.alert("Success!", `You have joined the "${familyDocSnap.data().name}" family!`);
+      closeJoinModal();
+      
+      // Navigation will be handled by the onSnapshot listener in _layout.tsx
+
+    } catch (error: any) {
+      console.error("Error joining family: ", error);
+      Alert.alert("Error", error.message || "Could not join family. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+
+  // --- Sign Out Logic ---
   const handleSignOut = () => {
     signOut(auth);
   };
 
-  // --- No other changes to the JSX or Styles ---
-
   return (
     <View style={styles.container}>
+      {/* Create Family Modal */}
       <Modal
         animationType="fade"
         transparent={true}
-        visible={isModalVisible}
-        onRequestClose={closeModal}
+        visible={isCreateModalVisible}
+        onRequestClose={closeCreateModal}
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalView}>
@@ -132,7 +204,7 @@ const FamilyChoiceScreen = () => {
             <View style={styles.modalButtonContainer}>
               <Pressable
                 style={[styles.modalButton, styles.modalButtonCancel]}
-                onPress={closeModal}
+                onPress={closeCreateModal}
               >
                 <Text style={[styles.modalButtonText, styles.modalButtonCancelText]}>Cancel</Text>
               </Pressable>
@@ -147,6 +219,45 @@ const FamilyChoiceScreen = () => {
         </View>
       </Modal>
 
+      {/* --- NEW: Join Family Modal --- */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={isJoinModalVisible}
+        onRequestClose={closeJoinModal}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalView}>
+            <Text style={styles.modalTitle}>Join a Family</Text>
+            <Text style={styles.modalSubtitle}>Enter the 6-character invite code.</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="ABC123"
+              placeholderTextColor="#999"
+              value={familyCode}
+              onChangeText={setFamilyCode}
+              autoCapitalize="characters"
+              maxLength={6}
+            />
+            <View style={styles.modalButtonContainer}>
+              <Pressable
+                style={[styles.modalButton, styles.modalButtonCancel]}
+                onPress={closeJoinModal}
+              >
+                <Text style={[styles.modalButtonText, styles.modalButtonCancelText]}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalButton, styles.modalButtonCreate]}
+                onPress={handleSubmitFamilyCode} // Use the new handler
+              >
+                <Text style={[styles.modalButtonText, styles.modalButtonCreateText]}>Join</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Main Screen Content */}
       <Text style={styles.title}>Welcome, {auth.currentUser?.displayName}!</Text>
       <Text style={styles.subtitle}>You're almost ready to start tracking chores.</Text>
       
@@ -164,7 +275,7 @@ const FamilyChoiceScreen = () => {
       
       <TouchableOpacity
         style={styles.buttonOutline}
-        onPress={handleJoinFamily}
+        onPress={handleJoinFamily} // This now opens the join modal
         disabled={isLoading}
       >
         <Text style={styles.buttonOutlineText}>Join a Family</Text>
