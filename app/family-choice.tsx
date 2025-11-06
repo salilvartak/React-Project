@@ -1,3 +1,4 @@
+// app/family-choice.tsx
 import { useRouter } from 'expo-router';
 import { signOut } from 'firebase/auth';
 import { doc, getDoc, serverTimestamp, writeBatch } from "firebase/firestore";
@@ -9,9 +10,8 @@ const FamilyChoiceScreen = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [familyName, setFamilyName] = useState("");
-  const router = useRouter();
+  const router = useRouter(); // We keep this for the (unused) join button
 
-  // Generates a 6-digit alphanumeric (A-Z, 0-9) code.
   const generateFamilyCode = () => {
     const chars = 'ABCDEFGHIJKLMNPQRSTUVWXYZ123456789';
     let result = '';
@@ -21,12 +21,10 @@ const FamilyChoiceScreen = () => {
     return result;
   };
 
-  // 1. This function just opens the modal
   const handleCreateFamily = () => {
     setIsModalVisible(true);
   };
 
-  // 2. This handles the modal's "Create" button press
   const handleSubmitFamilyName = () => {
     if (familyName && familyName.trim() !== "") {
       closeModal();
@@ -36,9 +34,8 @@ const FamilyChoiceScreen = () => {
     }
   };
 
-  // 3. This is the main creation logic
   const executeCreateFamily = async (name: string) => {
-    setIsLoading(true); // Show loading spinner
+    setIsLoading(true);
     const user = auth.currentUser;
     if (!user) {
       setIsLoading(false);
@@ -46,21 +43,18 @@ const FamilyChoiceScreen = () => {
       return;
     }
 
-    let success = false; // Flag to prevent re-render on success
     let familyCode = ''; // To store the generated code
     try {
       const batch = writeBatch(db);
       let familyDocRef;
       let familyDocSnap;
 
-      // Find a unique family code
       do {
         familyCode = generateFamilyCode();
         familyDocRef = doc(db, "families", familyCode);
         familyDocSnap = await getDoc(familyDocRef);
       } while (familyDocSnap.exists());
       
-      // 1. Create the new family document
       batch.set(familyDocRef, {
         name: name,
         code: familyCode,
@@ -71,41 +65,36 @@ const FamilyChoiceScreen = () => {
         createdAt: serverTimestamp(),
       });
 
-      // 2. Create or update the user's document
       const userDocRef = doc(db, "users", user.uid);
-      // Use set with { merge: true }
-      // This will CREATE the doc if it's missing (fixing your error)
-      // or UPDATE it if it already exists.
       batch.set(userDocRef, {
         hasFamily: true,
         familyId: familyCode,
       }, { merge: true });
 
-      // 3. Commit both changes at once
       await batch.commit();
       
-      success = true; // Mark as successful
+      // --- THIS IS THE FIX ---
+      // 1. Show an Alert with the new code
+      Alert.alert(
+        "Family Created!",
+        `Your new family code is: ${familyCode}\n\nYou will now be taken to the app.`
+      );
       
-      // 4. Navigate to the success screen
-      router.replace({
-        pathname: '/family-created',
-        params: { code: familyCode, name: name }
-      });
+      // 2. DO NOT navigate. The `onSnapshot` in _layout.tsx
+      //    will detect the change and navigate automatically.
+      
+      // router.replace(...) // <-- REMOVED
 
     } catch (error) {
       console.error("Error creating family: ", error);
       Alert.alert("Error", "Could not create family. Please try again.");
     } finally {
-      // 5. ONLY stop loading if it failed.
-      // If it succeeded, the screen will navigate away,
-      // and setting state here would cause a race condition.
-      if (!success) {
-        setIsLoading(false);
-      }
+      // 3. We can now safely set loading to false.
+      // The onSnapshot will fire AFTER this state update.
+      setIsLoading(false);
     }
   };
 
-  // Helper to close and reset the modal state
   const closeModal = () => {
     setIsModalVisible(false);
     setFamilyName("");
@@ -119,9 +108,10 @@ const FamilyChoiceScreen = () => {
     signOut(auth);
   };
 
+  // --- No other changes to the JSX or Styles ---
+
   return (
     <View style={styles.container}>
-      {/* --- Modal for entering family name --- */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -157,13 +147,12 @@ const FamilyChoiceScreen = () => {
         </View>
       </Modal>
 
-      {/* --- Main Screen Content --- */}
       <Text style={styles.title}>Welcome, {auth.currentUser?.displayName}!</Text>
       <Text style={styles.subtitle}>You're almost ready to start tracking chores.</Text>
       
       <TouchableOpacity
         style={styles.button}
-        onPress={handleCreateFamily} // Opens the modal
+        onPress={handleCreateFamily} 
         disabled={isLoading}
       >
         {isLoading ? (
@@ -188,7 +177,7 @@ const FamilyChoiceScreen = () => {
   );
 };
 
-// --- Styles ---
+// Styles (no changes)
 const styles = StyleSheet.create({
   container: {
     flex: 1,

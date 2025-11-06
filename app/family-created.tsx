@@ -1,4 +1,4 @@
-// Create this new file at: app/family-created.tsx
+// app/family-created.tsx
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React from 'react';
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
