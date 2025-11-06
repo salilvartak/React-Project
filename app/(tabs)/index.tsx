@@ -3,7 +3,9 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/firebaseConfig';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import RNDateTimePicker, {
+  DateTimePickerEvent,
+} from '@react-native-community/datetimepicker';
 import {
   addDoc,
   collection,
@@ -12,7 +14,7 @@ import {
   onSnapshot,
   query,
   serverTimestamp,
-  updateDoc
+  updateDoc,
 } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import {
@@ -20,21 +22,23 @@ import {
   Alert,
   FlatList,
   Modal,
+  Platform,
+  Pressable,
   SafeAreaView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from 'react-native';
+
+// Use the light theme colors directly
+const theme = Colors.light;
 
 // ChoreItem Component (Unchanged)
 const ChoreItem = ({ item, onToggle, onDelete }: { item: any, onToggle: (id: string, isCompleted: boolean) => void, onDelete: (id: string) => void }) => {
-  const colorScheme = useColorScheme();
-  const theme = Colors[colorScheme ?? 'light'];
-
   return (
-    <View style={[styles.choreItem, { backgroundColor: theme.background, shadowColor: theme.text }]}>
+    <View style={styles.card}>
       <TouchableOpacity onPress={() => onToggle(item.id, item.isCompleted)} style={styles.choreDetails}>
         <View style={[
           styles.checkBox, 
@@ -68,16 +72,13 @@ const ChoreItem = ({ item, onToggle, onDelete }: { item: any, onToggle: (id: str
 
 // MemberSelectItem Component (Unchanged)
 const MemberSelectItem = ({ item, isSelected, onSelect }: { item: any, isSelected: boolean, onSelect: () => void }) => {
-  const colorScheme = useColorScheme();
-  const theme = Colors[colorScheme ?? 'light'];
-  
-  const avatarColor = isSelected ? theme.tint : (theme.tint + '20');
+  const avatarColor = isSelected ? theme.tint : '#e9f5e9';
   const avatarTextColor = isSelected ? '#FFF' : theme.tint;
-  const cardColor = isSelected ? (theme.tint + '20') : theme.background;
-  const nameColor = isSelected ? theme.tint : theme.text;
+  const cardColor = isSelected ? '#e9f5e9' : '#fff';
+  const nameColor = theme.text;
 
   return (
-    <TouchableOpacity onPress={onSelect} style={[styles.memberCard, { backgroundColor: cardColor, borderColor: isSelected ? theme.tint : (theme.icon + '30') }]}>
+    <TouchableOpacity onPress={onSelect} style={[styles.memberCard, { backgroundColor: cardColor, borderColor: isSelected ? theme.tint : '#ddd' }]}>
       <View style={[styles.memberAvatar, { backgroundColor: avatarColor }]}>
         <Text style={[styles.memberAvatarText, { color: avatarTextColor }]}>
           {item.name ? item.name[0].toUpperCase() : 'U'}
@@ -96,10 +97,12 @@ export default function MyChoresScreen() {
   
   const [newChoreTitle, setNewChoreTitle] = useState("");
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
-  const [dueDate, setDueDate] = useState("");
 
-  const colorScheme = useColorScheme();
-  const theme = Colors[colorScheme ?? 'light'];
+  // --- Date Picker State ---
+  const [dueDate, setDueDate] = useState(""); // This will hold the formatted string "YYYY-MM-DD"
+  const [date, setDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  // --- End Date Picker State ---
 
   // Fetch chores (Unchanged)
   useEffect(() => {
@@ -174,32 +177,27 @@ export default function MyChoresScreen() {
     );
   };
 
-  // closeModal (Unchanged)
+  // closeModal (Updated)
   const closeModal = () => {
     setIsModalVisible(false);
     setNewChoreTitle("");
     setSelectedMemberId(null);
-    setDueDate("");
+    setDueDate(""); // Clear formatted date string
+    setDate(new Date()); // Reset date picker to today
   }
 
-  // --- UPDATED: Add Chore Function ---
+  // handleAddChore (Unchanged)
   const handleAddChore = async () => {
-    // Specific check for title
     if (newChoreTitle.trim() === "") {
       Alert.alert("Error", "Please enter a chore title.");
       return;
     }
-
-    // --- THIS IS THE FIX ---
-    // Specific check for family data
     if (!profile?.familyId || !family) {
       Alert.alert("Error", "Family data is not loaded. Please try again in a moment.");
       console.error("AddChore failed: profile or family not loaded.", { profile, family });
       return;
     }
-    // --- END FIX ---
     
-    // Find member name from ID
     const selectedMember = family.members.find((m: any) => m.uid === selectedMemberId);
 
     const choresCollectionRef = collection(db, 'families', profile.familyId, 'chores');
@@ -208,7 +206,7 @@ export default function MyChoresScreen() {
         title: newChoreTitle.trim(),
         assignedTo: selectedMemberId, 
         assignedToName: selectedMember ? selectedMember.name : "Anyone",
-        dueDate: dueDate.trim() || null,
+        dueDate: dueDate.trim() || null, // Use the formatted string
         isCompleted: false,
         createdAt: serverTimestamp(),
         createdBy: user?.uid,
@@ -219,6 +217,26 @@ export default function MyChoresScreen() {
       Alert.alert("Error", "Could not add chore.");
     }
   };
+
+  // --- Date Picker Handlers ---
+  const toggleDatePicker = () => {
+    setShowDatePicker(!showDatePicker);
+  };
+
+  const onDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false); // Android picker closes itself
+    }
+    
+    if (event.type === 'set' && selectedDate) {
+      setDate(selectedDate);
+      // Format date to "YYYY-MM-DD"
+      const formatted = selectedDate.toISOString().split('T')[0];
+      setDueDate(formatted);
+    }
+  };
+  // --- End Date Picker Handlers ---
+
 
   // renderContent (Unchanged)
   const renderContent = () => {
@@ -239,16 +257,16 @@ export default function MyChoresScreen() {
             onDelete={handleDeleteChore} 
           />
         )}
-        contentContainerStyle={{ paddingBottom: 20 }}
+        contentContainerStyle={{ paddingTop: 10, paddingBottom: 20 }}
       />
     );
   };
 
-  // Main component render (Unchanged)
+  // Main component render
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={[styles.header, { borderBottomColor: theme.icon + '30' }]}>
-        <Text style={[styles.title, { color: theme.text }]}>My Chores</Text>
+      <View style={styles.header}>
+        <Text style={[styles.title, { color: theme.text }]}></Text>
         <TouchableOpacity style={styles.addButton} onPress={() => setIsModalVisible(true)}>
           <IconSymbol name="plus" size={28} color={theme.tint} />
         </TouchableOpacity>
@@ -256,7 +274,7 @@ export default function MyChoresScreen() {
       
       {renderContent()}
 
-      {/* Add Chore Modal (Unchanged) */}
+      {/* Add Chore Modal */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -264,7 +282,7 @@ export default function MyChoresScreen() {
         onRequestClose={closeModal}
       >
         <View style={styles.modalBackdrop}>
-          <View style={[styles.modalView, { backgroundColor: theme.background }]}>
+          <View style={[styles.modalView, { backgroundColor: '#fff' }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: theme.text }]}>Add New Chore</Text>
               <TouchableOpacity onPress={closeModal}>
@@ -274,9 +292,9 @@ export default function MyChoresScreen() {
 
             <Text style={[styles.modalLabel, { color: theme.text }]}>Chore Title</Text>
             <TextInput
-              style={[styles.modalInput, { backgroundColor: theme.icon + '20', color: theme.text }]}
+              style={styles.modalInput}
               placeholder="e.g. Clean the kitchen"
-              placeholderTextColor="#999"
+              placeholderTextColor="#6c757d"
               value={newChoreTitle}
               onChangeText={setNewChoreTitle}
             />
@@ -300,20 +318,46 @@ export default function MyChoresScreen() {
             />
 
             <Text style={[styles.modalLabel, { color: theme.text }]}>Due Date (Optional)</Text>
-            <TextInput
-              style={[styles.modalInput, { backgroundColor: theme.icon + '20', color: theme.text }]}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor="#999"
-              value={dueDate}
-              onChangeText={setDueDate}
-              maxLength={10}
-            />
+            
+            {/* --- NEW: Date Picker Input --- */}
+            <Pressable onPress={toggleDatePicker}>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Select a due date"
+                placeholderTextColor="#6c757d"
+                value={dueDate} // Show the formatted date string
+                editable={false} // Make it not editable
+              />
+            </Pressable>
+
+            {/* --- NEW: Date Picker Component --- */}
+            {showDatePicker && (
+              <RNDateTimePicker
+                testID="dateTimePicker"
+                value={date}
+                mode="date"
+                display="default"
+                onChange={onDateChange}
+                minimumDate={new Date()} // Optional: prevent past dates
+              />
+            )}
+            
+            {/* On iOS, the picker can be part of the modal. We need a button to close it. */}
+            {showDatePicker && Platform.OS === 'ios' && (
+              <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
+                <TouchableOpacity onPress={toggleDatePicker} style={styles.datePickerDoneButton}>
+                  <Text style={styles.datePickerDoneText}>Done</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            {/* --- End Date Picker --- */}
+
 
             <TouchableOpacity
-                style={[styles.modalButtonCreate]}
+                style={styles.modalButtonCreate}
                 onPress={handleAddChore}
               >
-              <Text style={[styles.modalButtonCreateText]}>Create Chore</Text>
+              <Text style={styles.modalButtonCreateText}>Create Chore</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -322,7 +366,7 @@ export default function MyChoresScreen() {
   );
 }
 
-// Styles (Unchanged)
+// Styles
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -331,12 +375,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: '5%',
     paddingVertical: 15,
-    borderBottomWidth: 1,
+    paddingTop: 20, // More space at top
   },
   title: {
-    fontSize: 32,
+    fontSize: 38, // Bigger title
     fontWeight: 'bold',
   },
   addButton: {
@@ -346,20 +390,24 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 50,
     fontSize: 18,
-    color: '#666',
+    color: '#6c757d',
   },
-  choreItem: {
+  // --- CARD STYLE ---
+  card: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginHorizontal: 20,
-    marginTop: 15,
+    width: '90%',
+    alignSelf: 'center',
+    marginBottom: 15,
+    backgroundColor: '#fff',
+    borderRadius: 15,
     padding: 20,
-    borderRadius: 12,
-    elevation: 2,
-    shadowOffset: { width: 0, height: 1 },
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   choreDetails: {
     flexDirection: 'row',
@@ -398,7 +446,7 @@ const styles = StyleSheet.create({
     padding: 5,
     marginLeft: 10,
   },
-  // --- UPDATED MODAL STYLES ---
+  // --- MODAL STYLES ---
   modalBackdrop: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -428,7 +476,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
     flex: 1,
-    marginLeft: 24, // to balance the close button
+    marginLeft: 24, 
   },
   modalLabel: {
     fontSize: 16,
@@ -436,30 +484,35 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     marginTop: 10,
   },
+  // Input style from signup/login
   modalInput: {
     width: '100%',
-    height: 50,
+    height: 55,
+    backgroundColor: '#e9f5e9',
     borderRadius: 10,
-    paddingHorizontal: 15,
+    marginBottom: 20,
+    paddingHorizontal: 20,
     fontSize: 16,
-    marginBottom: 15,
+    color: '#333',
   },
+  // Button style from signup/login
   modalButtonCreate: {
+    width: '100%',
     height: 55,
     backgroundColor: '#4CAF50',
     borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 10,
   },
   modalButtonCreateText: {
-    color: 'white',
+    color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',
   },
   // Member Select Styles
   memberCard: {
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderRadius: 10,
     padding: 10,
     alignItems: 'center',
@@ -483,5 +536,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     textAlign: 'center',
+  },
+  // Date Picker Button (for iOS)
+  datePickerDoneButton: {
+    padding: 10,
+  },
+  datePickerDoneText: {
+    color: theme.tint,
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

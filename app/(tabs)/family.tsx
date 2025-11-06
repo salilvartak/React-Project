@@ -3,7 +3,6 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { auth, db } from '@/firebaseConfig';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 import * as Clipboard from 'expo-clipboard';
 import { arrayRemove, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import React from 'react';
@@ -11,8 +10,7 @@ import {
     ActivityIndicator,
     Alert,
     FlatList,
-    Platform // <-- IMPORT PLATFORM
-    ,
+    Platform,
     SafeAreaView,
     StyleSheet,
     Text,
@@ -21,14 +19,17 @@ import {
     View
 } from 'react-native';
 
+// Use the light theme colors directly
+const theme = Colors.light;
+
 const MemberItem = ({ item }: { item: any }) => {
-  const colorScheme = useColorScheme();
-  const theme = Colors[colorScheme ?? 'light'];
-  const avatarColor = theme.tint + '20';
+  // Use light green for avatar, green for text
+  const avatarColor = '#e9f5e9';
   const avatarTextColor = theme.tint;
 
   return (
-    <View style={[styles.memberRow, { borderBottomColor: theme.icon + '20' }]}>
+    // This View is now the card
+    <View style={styles.card}>
       <View style={[styles.avatar, { backgroundColor: avatarColor }]}>
         <Text style={[styles.avatarText, { color: avatarTextColor }]}>
           {item.name ? item.name[0].toUpperCase() : 'U'}
@@ -36,7 +37,7 @@ const MemberItem = ({ item }: { item: any }) => {
       </View>
       <View>
         <Text style={[styles.memberName, { color: theme.text }]}>{item.name} {item.uid === auth.currentUser?.uid && '(You)'}</Text>
-        <Text style={[styles.memberEmail, { color: theme.icon }]}>{item.role}</Text>
+        <Text style={[styles.memberRole, { color: theme.icon }]}>{item.role}</Text>
       </View>
     </View>
   );
@@ -44,21 +45,15 @@ const MemberItem = ({ item }: { item: any }) => {
 
 export default function FamilyScreen() {
   const { user, profile, family, isLoading } = useAuth();
-  const colorScheme = useColorScheme();
-  const theme = Colors[colorScheme ?? 'light'];
 
   const handleCopyToClipboard = async () => {
     if (family?.code) {
       await Clipboard.setStringAsync(family.code);
-      
-      // --- THIS IS THE FIX ---
       if (Platform.OS === 'android') {
         ToastAndroid.show("Invite code copied to clipboard!", ToastAndroid.SHORT);
       } else {
-        // Fallback for iOS and Web
         Alert.alert("Copied!", "Invite code copied to clipboard.");
       }
-      // --- END FIX ---
     }
   };
 
@@ -122,7 +117,6 @@ export default function FamilyScreen() {
       if (Platform.OS === 'android') {
         ToastAndroid.show("You have left the family.", ToastAndroid.SHORT);
       }
-      // Note: Navigation is handled automatically by the AuthContext listener
 
     } catch (error) {
       console.error("Error leaving family:", error);
@@ -150,41 +144,42 @@ export default function FamilyScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={[styles.header, { borderBottomColor: theme.icon + '30' }]}>
-        <Text style={[styles.title, { color: theme.text }]}>Family</Text>
+      <View style={styles.header}>
+        <Text style={[styles.title, { color: theme.text }]}></Text>
         <TouchableOpacity style={styles.leaveButton} onPress={handleLeaveFamily}>
           <IconSymbol name="rectangle.portrait.and.arrow.right" size={24} color={theme.icon} />
         </TouchableOpacity>
       </View>
 
-      <View style={styles.content}>
-        <View style={[styles.card, { backgroundColor: theme.background, shadowColor: theme.text }]}>
-          <Text style={[styles.familyName, { color: theme.text }]}>{family.name}</Text>
-          <Text style={[styles.inviteLabel, { color: theme.icon }]}>Invite Code</Text>
-          <View style={[styles.codeContainer, { backgroundColor: theme.tint + '20' }]}>
-            <Text style={[styles.codeText, { color: theme.tint }]}>{family.code}</Text>
-            <TouchableOpacity style={styles.copyButton} onPress={handleCopyToClipboard}>
-              <IconSymbol name="doc.on.doc" size={22} color={theme.tint} />
-            </TouchableOpacity>
-          </View>
-          <Text style={[styles.shareText, { color: theme.icon }]}>Share this code for others to join your family</Text>
-        </View>
+      <FlatList
+        data={family.members}
+        keyExtractor={(item) => item.uid}
+        renderItem={({ item }) => <MemberItem item={item} />}
+        ListHeaderComponent={
+          <>
+            <View style={[styles.card, styles.inviteCard]}>
+              <Text style={[styles.familyName, { color: theme.text }]}>{family.name}</Text>
+              <Text style={[styles.inviteLabel, { color: theme.icon }]}>Invite Code</Text>
+              <View style={[styles.codeContainer, { backgroundColor: '#e9f5e9' }]}>
+                <Text style={[styles.codeText, { color: theme.tint }]}>{family.code}</Text>
+                <TouchableOpacity style={styles.copyButton} onPress={handleCopyToClipboard}>
+                  <IconSymbol name="doc.on.doc" size={22} color={theme.tint} />
+                </TouchableOpacity>
+              </View>
+              <Text style={[styles.shareText, { color: theme.icon }]}>Share this code for others to join your family</Text>
+            </View>
 
-        <Text style={[styles.membersTitle, { color: theme.text }]}>
-          Family Members ({family.members?.length || 0})
-        </Text>
-        
-        <FlatList
-          data={family.members}
-          keyExtractor={(item) => item.uid}
-          renderItem={({ item }) => <MemberItem item={item} />}
-        />
-      </View>
+            <Text style={[styles.membersTitle, { color: theme.text }]}>
+              Family Members ({family.members?.length || 0})
+            </Text>
+          </>
+        }
+        contentContainerStyle={{ paddingBottom: 20 }}
+      />
     </SafeAreaView>
   );
 }
 
-// (Styles are unchanged)
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -193,30 +188,39 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: '5%',
     paddingVertical: 15,
-    borderBottomWidth: 1,
+    paddingTop: 20,
+    backgroundColor: '#f4f4f8', // Match container
   },
   title: {
-    fontSize: 32,
+    fontSize: 38,
     fontWeight: 'bold',
   },
   leaveButton: {
     padding: 5,
   },
-  content: {
-    flex: 1,
-    padding: 20,
-  },
+  // --- CARD STYLE ---
   card: {
-    width: '100%',
+    width: '90%',
+    alignSelf: 'center',
+    backgroundColor: '#fff',
     borderRadius: 15,
+    padding: 20,
+    marginBottom: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    flexDirection: 'row', // Make MemberItem a row
+    alignItems: 'center', // Align avatar and text
+  },
+  inviteCard: {
     padding: 25,
     marginBottom: 30,
-    elevation: 2,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    flexDirection: 'column', // Override for invite card
+    alignItems: 'stretch',
   },
   familyName: {
     fontSize: 28,
@@ -245,6 +249,9 @@ const styles = StyleSheet.create({
   },
   copyButton: {
     padding: 10,
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    elevation: 2,
   },
   shareText: {
     fontSize: 14,
@@ -252,16 +259,12 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   membersTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: 'bold',
     marginBottom: 15,
+    paddingHorizontal: '5%', // Align with cards
   },
-  memberRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-  },
+  // MemberItem styles (merged into card)
   avatar: {
     width: 44,
     height: 44,
@@ -278,7 +281,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  memberEmail: {
+  memberRole: {
     fontSize: 14,
   },
 });
